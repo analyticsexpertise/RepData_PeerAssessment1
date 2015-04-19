@@ -5,21 +5,247 @@ output:
     keep_md: true
 ---
 
+## Peer Assessment 1
+
+``` {r, echo = TRUE}
+ ## loading required R packages
+  require(dplyr)
+  require(xtable)
+  require(ggplot2)
+```
+
 
 ## Loading and preprocessing the data
 
+### Load the data
+-Load the data from file activity.csv located in working directory  
+-if data does not exist in global environment  
 
+``` {r, echo = TRUE}
+## check if dataframe exists
+  dfExists <- function(df_name){
+    
+    return(exists(df_name) && is.data.frame(get(df_name)))
+    
+  }  
+
+## Load data if data does not exist in global environment
+  
+  if(dfExists('actdata') == FALSE ){
+    
+    actdata <<- read.csv("activity.csv")
+    }
+```
+### Process the data
+
+``` {r, echo = TRUE}
+  ## rearrange data by date
+  actdata <<- arrange(actdata,date)
+  
+  ## group data by date
+  byday <<- group_by(actdata,date)
+  
+  ## group data by interval
+  byinterval <<- group_by(actdata,interval)
+```
 
 ## What is mean total number of steps taken per day?
 
+### Histogram of the total number of steps taken each day
+``` {r hist, fig.height = 5}
+ 
+  bydaysteps <- summarize(byday,sum_steps=sum(steps))
+  
+  hist(x = bydaysteps$sum_steps, main = "Total number of steps taken per day", xlab = "Steps" )
 
+```
 
+### Mean total number of steps taken each day
+``` {r showmean, results="asis"}
+
+  xt <- xtable(summarize(byday,mean_steps=mean(steps,na.rm=TRUE)))
+ 
+  print(xt, type = "html")
+
+```
+### Median total number of steps taken per day
+``` {r showmedian, results="asis"}
+ xt <- xtable(summarize(byday,median_steps=median(steps,na.rm=TRUE)))
+
+  print(xt, type = "html")
+
+```
+ 
 ## What is the average daily activity pattern?
 
+```{r timeseries, fig.height = 5}
 
+maketimeseriesplot <- function(){
+  
+  plotdata <- summarize(byinterval,mean_steps = mean(steps, na.rm=TRUE))
+  
+  theplot <- ggplot(plotdata, aes(x=interval,y=mean_steps))
+  theplot <- theplot + geom_line()
+  theplot <- theplot + xlab("Interval")
+  theplot <- theplot + ylab("Number of Steps")
+  theplot <- theplot + ggtitle("5-minute interval and average number of steps taken across all days")
+  
+  theplot
+  
+}
+
+maketimeseriesplot()
+
+```
+### Which 5 minute interval, on average across all days contains the maximum number of steps?
+
+```{r}
+calcmaxstepinterval <- function(){
+  
+  plotdata <- summarize(byinterval,mean_steps = mean(steps, na.rm=TRUE))
+  
+ maxsteprow <- plotdata[plotdata$mean_steps == max(plotdata$mean_steps), ]
+ 
+ return(maxsteprow$interval)
+  
+  
+}
+
+```
+### The 5 minute interval is `r calcmaxstepinterval()`.  
 
 ## Imputing missing values
 
+### What is the total number of missing values in the dataset?
+```{r}
 
+## Calculate total number of missing values 
+
+calctotalmissingvalues <- function(){
+  
+ numberofrows = nrow(actdata)
+ 
+ numberofnonNArows = nrow(na.omit(actdata))
+ 
+ return(numberofrows-numberofnonNArows)
+ 
+}
+
+``` 
+
+### The total number of missing values is `r calctotalmissingvalues()`.
+
+
+## Strategy for filling in all of the missing values in the dataset
+### If value for steps is NA then the mean value for the 5 minute interval is substituted for NA.
+### The new data are stored in a dataframe named imputeddata.
+
+```{r}
+
+## Create dataset that is equal to the original dataset but with the missing data filled in.
+
+createimputeddata <- function(){
+  
+  intervalmeans <- summarize(byinterval,mean_steps_by_interval=mean(steps,na.rm=TRUE))
+  imputeddata <<- merge(byday,intervalmeans,by=c("interval"))
+  imputedbyday <<- arrange(imputeddata, date)
+  imputedbyday <<- group_by(imputedbyday,date)
+  imputeddata <<- transform(imputedbyday, steps = ifelse(is.na(steps)==FALSE,steps,mean_steps_by_interval))
+  imputeddata <<- group_by(imputeddata,date)
+  imputeddata <<- arrange(imputeddata,date) 
+}
+
+createimputeddata()
+
+```
+
+### Total number of steps taken each day based upon the imputed data set
+```{r hist2, fig.height = 5}
+## Create histogram of total number of steps taken each day for imputed dataset
+makehist_imputeddata <- function(){
+  
+  bydaysteps <- summarize(imputeddata,sum_steps=sum(steps))
+  
+  hist(x = bydaysteps$sum_steps, main = "Total number of steps taken per day 
+       \n if steps = NA then use interval mean", xlab = "Steps" )
+  
+}
+
+makehist_imputeddata()
+```
+
+## Calculate and report the mean and median total number of steps taken per day.
+``` {r showimputedmean, results = "asis"}
+
+require(ggplot2)
+
+## Calculate mean number of steps taken per day for imputed data
+
+  xt <- xtable(summarize(imputeddata,mean_steps_imputed=mean(steps,na.rm=TRUE)))
+  
+  print(xt, type = "html")
+
+```
+```{r showimputedmedian, results = "asis"}
+## Calculate median number of steps taken per day for imputed data
+
+  xt <- xtable(summarize(imputeddata,median_steps_imputed=median(steps,na.rm=TRUE)))
+  
+  print(xt, type = "html")
+
+```
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r panel, fig.height = 5}
+
+## Create new factor variable indicating wheter given date is a weekday or weekend
+
+weekdayorweekend <- function(thisdate){
+  
+  thedate = as.Date(thisdate)
+  
+  weekdayname = weekdays(thedate)
+  
+  if(weekdayname == "Sunday" || weekdayname == "Saturday"){
+    return("weekend")
+  }
+  else
+  {
+    return("weekday")
+    
+  }
+}
+
+addweekdayfactor <- function(){
+  
+  dayfactordataset <<- mutate(imputeddata,dayfactor = weekdayorweekend(date))
+  
+  dayfactordataset <<- group_by(dayfactordataset,dayfactor,interval)
+   
+}
+
+## Make a panel plot containing time series plot of the 5 minute interval and average number of steps taken 
+## averaged across all weekday days or weekend days
+
+makepanelplot <- function(){
+  
+  plotdata <- summarize(dayfactordataset,mean_steps = mean(steps))
+  
+  theplot <- ggplot(plotdata, aes(x=interval, y=mean_steps))
+  theplot <- theplot + geom_line()
+  theplot <- theplot + facet_wrap(~ dayfactor)
+  theplot <- theplot + facet_grid(dayfactor ~ .) 
+  theplot <- theplot + xlab("Interval")
+  theplot <- theplot + ylab("Number of Steps")
+  theplot <- theplot + ggtitle("Activity patterns between weekdays and weekends")
+  
+  theplot
+  
+}
+
+addweekdayfactor()
+
+makepanelplot()
+```
+
